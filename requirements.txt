@@ -1,0 +1,12 @@
+openai-agents>=0.24
+fastapi>=0.115
+uvicorn>=0.30
+httpx>=0.27
+zeroconf>=0.130
+beautifulsoup4>=4.12
+ddgs>=9.0
+qrcode>=8.0
+cryptography>=42
+# 桌面版：菜单栏/托盘图标
+pystray>=0.19
+pillow>=10

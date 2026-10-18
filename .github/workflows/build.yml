@@ -1,0 +1,55 @@
+# 自动打包：每次推送代码，或在 GitHub 的 Actions 页面手动点 “Run workflow”，
+# 就会在 GitHub 的电脑上打出 Windows 安装程序和 Mac 安装包，在这次运行的 Artifacts 里下载。
+name: 打包安装程序
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 安装 Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+      - name: 打包
+        shell: cmd
+        run: |
+          python -m venv .venv
+          packaging\build_windows.bat
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 家庭管家-Windows
+          path: packaging/dist/*.exe
+          if-no-files-found: error
+
+  mac:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-14   # Apple 芯片
+            label: Mac-Apple芯片
+          - runner: macos-13   # Intel 芯片
+            label: Mac-Intel芯片
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 打包
+        run: |
+          python -m venv .venv
+          cd packaging && ./build_mac.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 家庭管家-${{ matrix.label }}
+          path: packaging/dist/*.dmg
+          if-no-files-found: error

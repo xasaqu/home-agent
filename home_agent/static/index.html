@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>家庭管家</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --text: #1d2129; --muted: #6b7280; --line: #e5e7eb;
+    --accent: #2563eb; --accent-text: #fff; --ok: #16a34a; --warn: #d97706; --bad: #dc2626;
+    --bubble-me: #2563eb; --bubble-me-text: #fff; --bubble-bot: #eef1f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111318; --panel: #1a1d24; --text: #e5e7eb; --muted: #9ca3af; --line: #2a2f3a;
+      --accent: #3b82f6; --bubble-bot: #242833;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 16px; background: var(--panel);
+           border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 17px; margin: 0; }
+  nav { display: flex; gap: 4px; }
+  nav button { background: none; border: 0; padding: 6px 12px; border-radius: 6px; color: var(--muted); cursor: pointer; font: inherit; }
+  nav button.active { background: var(--bg); color: var(--text); font-weight: 600; }
+  #model { margin-left: auto; color: var(--muted); font-size: 13px; }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  section { display: none; } section.active { display: block; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  button.btn { background: var(--accent); color: var(--accent-text); border: 0; border-radius: 6px; padding: 7px 14px; cursor: pointer; font: inherit; }
+  button.btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button.btn:disabled { opacity: .5; cursor: default; }
+  input, select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  /* chat */
+  #log { height: calc(100vh - 220px); min-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px; }
+  .msg { max-width: 80%; padding: 8px 12px; border-radius: 12px; white-space: pre-wrap; word-break: break-word; }
+  .msg.me { align-self: flex-end; background: var(--bubble-me); color: var(--bubble-me-text); }
+  .msg.bot { align-self: flex-start; background: var(--bubble-bot); }
+  .msg.thinking { color: var(--muted); }
+  #chat-form { display: flex; gap: 8px; margin-top: 10px; }
+  #chat-input { flex: 1; resize: none; min-height: 42px; }
+  /* devices */
+  .dev { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; }
+  .dev h3 { margin: 0; font-size: 15px; }
+  .badge { font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .badge.view { color: var(--warn); border-color: var(--warn); }
+  .badge.control { color: var(--ok); border-color: var(--ok); }
+  .dev pre { grid-column: 1 / -1; margin: 0; max-height: 240px; overflow: auto; background: var(--bg); padding: 8px; border-radius: 6px; font-size: 12px; }
+  .dev .grant { grid-column: 1 / -1; display: none; gap: 8px; flex-direction: column; border-top: 1px dashed var(--line); padding-top: 8px; }
+  .dev .grant.open { display: flex; }
+  .req { border-left: 3px solid var(--warn); }
+  #qr img { width: 220px; height: 220px; background: #fff; padding: 8px; border-radius: 8px; }
+  /* setup wizard */
+  #wizard { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 10; padding: 16px; }
+  #wizard.open { display: flex; }
+  #wizard .card { max-width: 520px; width: 100%; margin: 0; padding: 22px; }
+  #wizard h2 { margin: 0 0 4px; font-size: 19px; }
+  .steps { display: flex; gap: 6px; margin-bottom: 14px; }
+  .steps span { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+  .steps span.on { background: var(--accent); }
+  .field { width: 100%; margin: 8px 0; }
+  .err { color: var(--bad); font-size: 13px; min-height: 1.2em; }
+  .setting { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .setting:last-child { border-bottom: 0; }
+  @media (max-width: 600px) { #model { display: none; } .msg { max-width: 92%; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>🏠 家庭管家</h1>
+  <nav>
+    <button data-tab="chat" class="active">对话</button>
+    <button data-tab="devices">设备</button>
+    <button data-tab="wechat">微信</button>
+    <button data-tab="settings">设置</button>
+  </nav>
+  <span id="model"></span>
+</header>
+<main>
+  <section id="chat" class="active">
+    <div class="card">
+      <div id="log"></div>
+      <form id="chat-form">
+        <textarea id="chat-input" rows="1" placeholder="例如：帮我找找家里有哪些设备 / 把客厅灯调到 30%"></textarea>
+        <button class="btn" id="send">发送</button>
+      </form>
+      <div class="row" style="margin-top:6px"><button class="btn ghost" id="reset" type="button">清空对话</button>
+        <span class="muted">Enter 发送，Shift+Enter 换行</span></div>
+    </div>
+  </section>
+
+  <section id="devices">
+    <div id="requests"></div>
+    <div class="card row">
+      <button class="btn" id="scan">扫描局域网</button>
+      <label class="row muted"><input type="checkbox" id="sweep"> 深度扫描（填充 ARP 表，更慢）</label>
+      <span class="muted" id="netinfo"></span>
+    </div>
+    <div class="card" id="mi">
+      <div class="row"><div style="flex:1"><b>米家设备</b>
+        <div class="muted">控制米家设备需要它的 token（相当于设备的钥匙）。用手机上的米家 App 扫一下码，管家会自动读出你小米账号下所有设备的 token。</div></div>
+        <button class="btn ghost" id="mi-start">用米家 App 扫码获取</button></div>
+      <div id="mi-body"></div>
+    </div>
+    <div id="device-list"></div>
+  </section>
+
+  <section id="wechat">
+    <div class="card" id="wx"></div>
+  </section>
+
+  <section id="settings">
+    <div class="card" id="settings-body"></div>
+  </section>
+</main>
+
+<div id="wizard"><div class="card" id="wizard-body"></div></div>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let token = ""; try { token = localStorage.getItem("ha-token") || ""; } catch {}
+{ // 微信里推送的链接会带 ?t=口令，记下来后从地址栏去掉
+  const t = new URLSearchParams(location.search).get("t");
+  if (t) { token = t; try { localStorage.setItem("ha-token", t); } catch {} history.replaceState(null, "", "/" + location.hash); }
+}
+let session = ""; try { session = localStorage.getItem("ha-session") || ""; } catch {}
+if (!session) { session = Math.random().toString(36).slice(2); try { localStorage.setItem("ha-session", session); } catch {} }
+
+async function api(path, body, method) {
+  const opt = { method: method || (body === undefined ? "GET" : "POST"), headers: { "X-Home-Agent": "1" } };
+  if (token) opt.headers["X-Token"] = token;
+  if (body !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+  const r = await fetch(path, opt);
+  if (r.status === 401) {
+    token = prompt("请输入访问口令（在电脑上打开家庭管家 → 设置 → 手机访问里可以看到带口令的链接）") || "";
+    try { localStorage.setItem("ha-token", token); } catch {}
+    return api(path, body, method);
+  }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || r.statusText);
+  return data;
+}
+
+// ---------- tabs ----------
+function showTab(name) {
+  const b = document.querySelector(`nav button[data-tab="${name}"]`); if (!b) return;
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("active", x === b));
+  document.querySelectorAll("section").forEach(s => s.classList.toggle("active", s.id === name));
+  if (name === "devices") loadDevices();
+  if (name === "wechat") loadWechat();
+  if (name === "settings") loadSettings();
+}
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+// ---------- chat ----------
+function addMsg(text, who) {
+  const d = document.createElement("div");
+  d.className = "msg " + who; d.textContent = text;
+  $("#log").appendChild(d); $("#log").scrollTop = 1e9; return d;
+}
+$("#chat-form").onsubmit = async e => {
+  e.preventDefault();
+  const text = $("#chat-input").value.trim(); if (!text) return;
+  $("#chat-input").value = ""; addMsg(text, "me");
+  const t = addMsg("思考中…", "bot thinking"); $("#send").disabled = true;
+  try { const r = await api("/api/chat", { message: text, session_id: session }); t.textContent = r.reply; t.className = "msg bot"; }
+  catch (err) { t.textContent = "出错了：" + err.message; t.className = "msg bot"; }
+  $("#send").disabled = false; $("#log").scrollTop = 1e9;
+  refreshRequests();
+};
+$("#chat-input").onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#chat-form").requestSubmit(); } };
+$("#reset").onclick = async () => { await api("/api/chat/reset", { session_id: session }); $("#log").innerHTML = ""; };
+
+// ---------- devices ----------
+let adapters = {};
+function renderRequests(reqs) {
+  $("#requests").innerHTML = reqs.map(r => `
+    <div class="card req row">
+      <div style="flex:1"><b>管家申请「${esc(r.device_name)}」的 ${r.level === "control" ? "操作" : "查看"}权限</b>
+        <div class="muted">${esc(r.reason)}</div></div>
+      <button class="btn" data-approve="${r.id}">批准</button>
+      <button class="btn ghost" data-deny="${r.id}">拒绝</button>
+    </div>`).join("");
+  $("#requests").querySelectorAll("[data-approve]").forEach(b => b.onclick = async () => {
+    const r = reqs.find(x => x.id === b.dataset.approve);
+    const dev = lastDevices.find(d => d.id === r.device_id);
+    const fields = Object.keys((adapters[dev?.adapter] || {}).credential_fields || {});
+    if (dev && fields.length && !dev.has_credentials) {
+      // 这类设备批准前需要先填凭证（例如路由器密码），直接打开它的授权表单
+      openGrant(dev.id, r.level, "填写后点“保存授权”，这条申请会一起批准");
+      return;
+    }
+    try { await api(`/api/requests/${b.dataset.approve}/approve`, {}); loadDevices(); }
+    catch (e) { b.closest(".req").querySelector(".muted").textContent = "批准失败：" + e.message; }
+  });
+  $("#requests").querySelectorAll("[data-deny]").forEach(b => b.onclick = async () => { await api(`/api/requests/${b.dataset.deny}/deny`, {}); loadDevices(); });
+}
+async function refreshRequests() {
+  try { const d = await api("/api/devices"); renderRequests(d.requests);
+    const n = d.requests.length; document.querySelector('[data-tab="devices"]').textContent = n ? `设备 (${n})` : "设备"; } catch {}
+}
+function alertBox(msg) { const d = document.createElement("div"); d.className = "card"; d.style.borderColor = "var(--bad)"; d.textContent = msg; $("#device-list").prepend(d); setTimeout(() => d.remove(), 6000); }
+
+let lastDevices = [];
+function openGrant(id, level, hint) {
+  const card = document.querySelector(`.dev[data-id="${id}"]`); if (!card) return;
+  const g = $(".grant", card);
+  if (!g.classList.contains("open")) $("[data-act=grant]", card).click();
+  if (level) $("[name=level]", g).value = level;
+  if (hint) $(".hint", g).textContent = hint;
+  card.scrollIntoView({ behavior: "smooth", block: "center" });
+  const first = $(".creds input, .creds textarea", g); if (first) first.focus();
+}
+function renderDevices(list) {
+  lastDevices = list;
+  if (!list.length) { $("#device-list").innerHTML = `<div class="card muted">还没有设备，点“扫描局域网”试试。</div>`; return; }
+  list.sort((a, b) => (b.permission !== "none") - (a.permission !== "none") || (a.adapter === "unknown") - (b.adapter === "unknown"));
+  $("#device-list").innerHTML = list.map(d => {
+    const perm = d.permission || "none";
+    const meta = [d.ip, d.mac, d.manufacturer, d.modelName || d.model, (d.sources || []).join("/")].filter(Boolean).map(esc).join(" · ");
+    const opts = ["unknown", ...Object.keys(adapters)].map(a => `<option ${a === d.adapter ? "selected" : ""}>${a}</option>`).join("");
+    return `<div class="card dev" data-id="${d.id}">
+      <div><h3>${esc(d.name)} <span class="badge ${perm}">${{none: "未授权", view: "可查看", control: "可操作"}[perm]}</span></h3>
+        <div class="muted">${meta} · 适配器：${esc(d.adapter)}</div></div>
+      <div class="row">
+        ${perm !== "none" ? `<button class="btn ghost" data-act="state">状态</button>` : ""}
+        ${perm === "control" && ["yeelight", "shelly", "miio"].includes(d.adapter) ? `<button class="btn ghost" data-act="on">开</button><button class="btn ghost" data-act="off">关</button>` : ""}
+        ${perm === "control" && d.adapter === "xiaomi_router" ? `<button class="btn ghost" data-act="sync">同步路由器设备</button>` : ""}
+        <button class="btn ghost" data-act="grant">授权…</button>
+      </div>
+      <div class="grant">
+        <div class="row"><label>适配器 <select name="adapter">${opts}</select></label>
+          <label>权限 <select name="level">
+            <option value="none" ${perm === "none" ? "selected" : ""}>无</option>
+            <option value="view" ${perm === "view" ? "selected" : ""}>仅查看</option>
+            <option value="control" ${perm === "control" ? "selected" : ""}>查看+操作</option></select></label>
+          <label>备注名 <input name="alias" value="${esc(d.alias || "")}" placeholder="${esc(d.name)}"></label></div>
+        <div class="creds"></div>
+        <div class="row"><button class="btn" data-act="save">保存授权</button><button class="btn ghost" data-act="delete">删除设备</button>
+          <span class="muted hint"></span></div>
+      </div>
+      <pre hidden></pre>
+    </div>`;
+  }).join("");
+
+  document.querySelectorAll(".dev").forEach(card => {
+    const id = card.dataset.id, pre = $("pre", card), g = $(".grant", card);
+    const renderCreds = () => {
+      const a = adapters[$("[name=adapter]", g).value] || { credential_fields: {} };
+      $(".creds", g).innerHTML = Object.entries(a.credential_fields).map(([k, help]) =>
+        `<label class="muted">${esc(k)}：${esc(help)}<br>${k === "config"
+          ? `<textarea name="cred-${k}" rows="4" style="width:100%"></textarea>`
+          : `<input name="cred-${k}" type="${k === "token" || k === "password" ? "password" : "text"}" style="width:100%"
+              placeholder="${k === "token" && lastDevices.find(x => x.id === id)?.has_credentials ? "已经有了，不用再填" : ""}">`}</label>`).join("");
+      $(".hint", g).textContent = $("[name=adapter]", g).value === "hue" ? "Hue：先按桥上的按钮，再点保存" : "";
+    };
+    $("[name=adapter]", g).onchange = renderCreds;
+    card.querySelectorAll("[data-act]").forEach(b => b.onclick = async () => {
+      const act = b.dataset.act;
+      try {
+        if (act === "grant") { g.classList.toggle("open"); renderCreds(); return; }
+        if (act === "state") { pre.hidden = false; pre.textContent = "读取中…"; pre.textContent = JSON.stringify(await api(`/api/devices/${id}/state`), null, 2); return; }
+        if (act === "on" || act === "off") { await api(`/api/devices/${id}/control`, { action: act, params: {} }); return; }
+        if (act === "sync") { pre.hidden = false; pre.textContent = "读取中…"; await api(`/api/devices/${id}/control`, { action: "sync_devices", params: {} }); loadDevices(); return; }
+        if (act === "delete") { await api(`/api/devices/${id}`, undefined, "DELETE"); loadDevices(); return; }
+        if (act === "save") {
+          const creds = {}; g.querySelectorAll("[name^=cred-]").forEach(i => { if (i.value) creds[i.name.slice(5)] = i.value; });
+          if (Object.keys(creds).length && $("[name=level]", g).value === "none") {
+            $(".hint", g).textContent = "请把“权限”选成“仅查看”或“查看+操作”，否则密码不会保存"; return;
+          }
+          const alias = $("[name=alias]", g).value.trim();
+          if (alias) await api(`/api/devices/${id}`, { alias }, "PATCH");
+          const adapter = $("[name=adapter]", g).value;
+          await api(`/api/devices/${id}/grant`, { level: $("[name=level]", g).value, adapter: adapter === "unknown" ? null : adapter,
+            credentials: Object.keys(creds).length ? creds : null });
+          loadDevices();
+        }
+      } catch (e) { pre.hidden = false; pre.textContent = "失败：" + e.message; if (act === "save") $(".hint", g).textContent = "失败：" + e.message; }
+    });
+  });
+}
+async function loadDevices() {
+  const d = await api("/api/devices"); adapters = d.adapters; renderRequests(d.requests); renderDevices(d.devices);
+}
+$("#scan").onclick = async () => {
+  $("#scan").disabled = true; $("#scan").textContent = "扫描中…";
+  try { const d = await api("/api/discover", { sweep: $("#sweep").checked }); adapters = d.adapters; renderRequests(d.requests); renderDevices(d.devices); }
+  catch (e) { alertBox(e.message); }
+  $("#scan").disabled = false; $("#scan").textContent = "扫描局域网";
+};
+
+// ---------- 米家扫码 ----------
+let miTimer = null;
+async function renderMi(info) {
+  clearTimeout(miTimer);
+  const box = $("#mi-body");
+  if (info.status === "idle") { box.innerHTML = ""; return; }
+  let html = `<p>${esc(info.message)}</p>`;
+  if (info.status === "waiting" && info.login_url)
+    html = `<div id="qr"><img src="/api/qr?data=${encodeURIComponent(info.login_url)}${token ? "&token=" + encodeURIComponent(token) : ""}" alt="二维码"></div>` + html
+      + `<p class="muted">打开米家 App → 右上角“+”旁边的扫一扫，扫这个码，然后在手机上点“确认登录”。只会读取设备 token，不会改动你的米家。</p>`;
+  if (info.status === "done" && info.devices.length)
+    html += `<ul class="muted">${info.devices.map(d => `<li>${esc(d.name)}（${esc(d.model)}，${esc(d.localip || "不在线")}）${d.matched ? "✓ 已填好" : "· 不在当前网络里"}</li>`).join("")}</ul>
+      <p class="muted">下一步：在下面的设备列表里找到它，点“授权…”，选好权限后保存，不用再填 token。</p>`;
+  box.innerHTML = html;
+  if (["waiting", "fetching"].includes(info.status)) miTimer = setTimeout(async () => renderMi(await api("/api/micloud")), 2000);
+  if (info.status === "done") loadDevices();
+}
+$("#mi-start").onclick = async () => {
+  $("#mi-start").disabled = true;
+  try { renderMi(await api("/api/micloud/login", {})); } catch (e) { $("#mi-body").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  $("#mi-start").disabled = false;
+};
+
+// ---------- wechat ----------
+let wxTimer = null, wxTarget = null;
+async function loadWechat(target) {
+  clearTimeout(wxTimer);
+  if (target !== undefined) wxTarget = target;
+  const box = wxTarget || $("#wx");
+  const w = await api("/api/wechat"), lg = w.login || {};
+  let html = "";
+  if (w.status === "logged_in") {
+    html = `<h3>✅ 微信已连接</h3><p class="muted">在微信里打开 ClawBot 对话就能和管家聊天。发送 /help 查看指令。</p>
+      <p class="muted">请先在 ClawBot 里随便发一句话（比如“你好”），之后管家才能主动给你推送授权提醒。</p>
+      <p class="muted">Bot：${esc(w.bot_id)}　主人：${esc(w.owner_user_id)}</p>
+      ${w.last_error ? `<p class="muted">最近错误：${esc(w.last_error)}</p>` : ""}
+      <button class="btn ghost" id="wx-logout">解除绑定</button>`;
+  } else {
+    html = `<h3>连接微信 ClawBot</h3>
+      <p class="muted">需要 iOS/Android 微信较新版本，并且能在“我 → 设置 → 插件”里看到 ClawBot（目前灰度开放）。</p>
+      ${w.status === "expired" ? `<p class="muted">登录已过期，请重新扫码。</p>` : ""}
+      ${lg.qrcode_url && !["expired", "verify_code_blocked", "confirmed"].includes(lg.status)
+        ? `<div id="qr"><img src="/api/qr?data=${encodeURIComponent(lg.qrcode_url)}${token ? "&token=" + encodeURIComponent(token) : ""}" alt="二维码"></div>
+           <p>${esc(lg.message)}</p>
+           ${lg.status === "need_verifycode" ? `<div class="row"><input id="wx-code" placeholder="手机上显示的数字"><button class="btn" id="wx-verify">提交</button></div>` : ""}`
+        : `${lg.message ? `<p>${esc(lg.message)}</p>` : ""}<button class="btn" id="wx-login">获取二维码</button>`}`;
+  }
+  box.innerHTML = html;
+  $("#wx-login", box) && ($("#wx-login", box).onclick = async () => { try { await api("/api/wechat/login", {}); } catch (e) { alert(e.message); } loadWechat(); });
+  $("#wx-logout", box) && ($("#wx-logout", box).onclick = async () => { await api("/api/wechat/logout", {}); loadWechat(); });
+  $("#wx-verify", box) && ($("#wx-verify", box).onclick = async () => { await api("/api/wechat/verify", { code: $("#wx-code", box).value }); loadWechat(); });
+  const waiting = w.status !== "logged_in" && lg.qrcode_url && ["wait", "scaned", "scaned_but_redirect"].includes(lg.status);
+  const visible = wxTarget ? $("#wizard").classList.contains("open") : $("#wechat").classList.contains("active");
+  if (waiting && visible) wxTimer = setTimeout(() => loadWechat(), 2000);
+  if (wxTarget && w.status === "logged_in" && typeof onWizardWechat === "function") onWizardWechat();
+}
+
+// ---------- settings ----------
+async function saveKey(input, errEl, btn) {
+  errEl.textContent = ""; btn.disabled = true; const label = btn.textContent; btn.textContent = "验证中…";
+  try { await api("/api/settings/key", { key: input.value }); return true; }
+  catch (e) { errEl.textContent = e.message; return false; }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+async function loadSettings() {
+  const st = await api("/api/settings"), w = st.wechat;
+  $("#settings-body").innerHTML = `
+    <div class="setting"><div><b>DeepSeek API Key</b><div class="muted">${st.api_key_configured ? "已设置 " + esc(st.api_key_hint) : "还没有设置"}</div></div>
+      <button class="btn ghost" id="st-key-edit">${st.api_key_configured ? "更换" : "填写"}</button></div>
+    <div id="st-key-form" hidden><input class="field" id="st-key" type="password" placeholder="sk-…">
+      <div class="row"><button class="btn" id="st-key-save">保存</button>
+      <a class="muted" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">去 DeepSeek 获取 key</a></div>
+      <div class="err" id="st-key-err"></div></div>
+    <div class="setting"><div><b>微信</b><div class="muted">${w.status === "logged_in" ? "已连接" : w.status === "expired" ? "登录已过期，需要重新扫码" : "未连接"}</div></div>
+      <button class="btn ghost" id="st-wx">${w.status === "logged_in" ? "查看" : "去连接"}</button></div>
+    <div class="setting"><div><b>开机自动启动</b><div class="muted">开机后管家在后台运行，菜单栏/任务栏有图标</div></div>
+      <input type="checkbox" id="st-auto" ${st.autostart ? "checked" : ""}></div>
+    <div class="setting"><div><b>手机访问</b><div class="muted">允许同一 WiFi 下的手机打开这个页面（需要口令，口令已包含在下面的链接和微信推送里）。改动后重启管家生效。</div>
+      ${st.lan_access && st.lan_access_active && st.phone_url ? `<div class="muted">手机打开：<a href="${esc(st.phone_url)}">${esc(st.phone_url)}</a></div>` : ""}
+      ${st.lan_access !== st.lan_access_active ? `<div class="muted">⚠️ 重启管家后生效</div>` : ""}</div>
+      <input type="checkbox" id="st-lan" ${st.lan_access ? "checked" : ""}></div>
+    <div class="setting"><div><b>数据保存位置</b><div class="muted">${esc(st.data_dir)}</div></div>
+      <button class="btn ghost" id="st-wizard">重新运行向导</button></div>`;
+  $("#st-key-edit").onclick = () => { $("#st-key-form").hidden = false; $("#st-key").focus(); };
+  $("#st-key-save").onclick = async () => { if (await saveKey($("#st-key"), $("#st-key-err"), $("#st-key-save"))) { loadSettings(); refreshStatus(); } };
+  $("#st-wx").onclick = () => showTab("wechat");
+  $("#st-auto").onchange = async e => { await api("/api/settings/autostart", { enabled: e.target.checked }); loadSettings(); };
+  $("#st-lan").onchange = async e => { await api("/api/settings/lan", { enabled: e.target.checked }); loadSettings(); };
+  $("#st-wizard").onclick = () => openWizard(0);
+}
+
+// ---------- 首次启动向导 ----------
+let wizStep = 0, onWizardWechat = null;
+function wizFrame(title, sub, body) {
+  return `<div class="steps">${[0, 1, 2].map(i => `<span class="${i <= wizStep ? "on" : ""}"></span>`).join("")}</div>
+    <h2>${title}</h2><p class="muted">${sub}</p>${body}`;
+}
+async function openWizard(step) {
+  wizStep = step; $("#wizard").classList.add("open"); const box = $("#wizard-body");
+  onWizardWechat = null;
+  if (step === 0) {
+    box.innerHTML = wizFrame("欢迎使用家庭管家 🏠", "第 1 步：填写 DeepSeek API Key。管家用它来理解你说的话。",
+      `<ol class="muted" style="padding-left:18px">
+        <li>打开 <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">platform.deepseek.com/api_keys</a> 并登录</li>
+        <li>点“创建 API key”，复制以 sk- 开头的那串字符</li>
+        <li>粘贴到下面</li></ol>
+      <input class="field" id="wz-key" type="password" placeholder="sk-…" autocomplete="off">
+      <div class="err" id="wz-err"></div>
+      <div class="row"><button class="btn" id="wz-next">验证并继续</button></div>`);
+    const st = await api("/api/settings");
+    if (st.api_key_configured) $("#wz-key").placeholder = "已设置 " + st.api_key_hint + "（不改可以直接继续）";
+    $("#wz-key").focus();
+    $("#wz-next").onclick = async () => {
+      if (!$("#wz-key").value && st.api_key_configured) return openWizard(1);
+      if (await saveKey($("#wz-key"), $("#wz-err"), $("#wz-next"))) { refreshStatus(); openWizard(1); }
+    };
+    $("#wz-key").onkeydown = e => { if (e.key === "Enter") $("#wz-next").click(); };
+  } else if (step === 1) {
+    box.innerHTML = wizFrame("连接微信（可选）", "第 2 步：绑定后可以在微信里和管家聊天，也能收到授权提醒，直接回复“同意”就能批准。",
+      `<div id="wz-wx"></div><div class="row" style="margin-top:12px">
+        <button class="btn" id="wz-next" hidden>继续</button><button class="btn ghost" id="wz-skip">以后再说</button></div>`);
+    onWizardWechat = () => { $("#wz-next").hidden = false; $("#wz-skip").hidden = true; };
+    $("#wz-next").onclick = $("#wz-skip").onclick = () => { clearTimeout(wxTimer); wxTarget = null; openWizard(2); };
+    loadWechat($("#wz-wx"));
+  } else {
+    const st = await api("/api/settings");
+    box.innerHTML = wizFrame("设置完成 🎉", "第 3 步：确认一下启动方式。",
+      `<label class="row"><input type="checkbox" id="wz-auto" ${st.autostart ? "checked" : ""}> 开机自动启动管家</label>
+      <p class="muted">管家会一直在后台运行。想打开这个页面时，点屏幕顶部菜单栏（Windows 是右下角任务栏）里的蓝色小房子图标。
+      所有设置都保存在电脑上，重启电脑后不用重新设置。</p>
+      <div class="row"><button class="btn" id="wz-done">开始使用</button></div>`);
+    $("#wz-done").onclick = async () => {
+      await api("/api/settings/autostart", { enabled: $("#wz-auto").checked }).catch(() => {});
+      await api("/api/settings/done", {});
+      $("#wizard").classList.remove("open"); showTab("devices");
+    };
+  }
+}
+
+// ---------- init ----------
+let greeted = false;
+function refreshStatus() {
+  return api("/api/status").then(s => {
+    $("#model").textContent = `${s.model}${s.api_key_configured ? "" : "（未配置 API Key）"} · ${s.network.network}`;
+    $("#netinfo").textContent = `本机 ${s.network.local_ip}，扫描网段 ${s.network.network}`;
+    if (!greeted) {
+      greeted = true;
+      if (!s.api_key_configured) addMsg("还没有设置 DeepSeek API Key，请到“设置”里填写。", "bot");
+      else addMsg("你好，我是你的家庭管家。可以让我扫描家里的设备、查看或控制它们，也可以问我任何问题。", "bot");
+    }
+    return s;
+  });
+}
+refreshStatus().then(s => {
+  if (!s.setup_done || !s.api_key_configured) openWizard(s.api_key_configured ? 1 : 0);
+  else if (location.hash.length > 1) showTab(location.hash.slice(1));
+}).catch(e => addMsg("连接服务失败：" + e.message, "bot"));
+refreshRequests(); setInterval(refreshRequests, 15000);
+</script>
+</body>
+</html>

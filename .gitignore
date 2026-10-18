@@ -1,0 +1,9 @@
+.env
+data/
+__pycache__/
+.venv/
+packaging/build/
+packaging/dist/
+packaging/build-assets/
+packaging/build.log
+.DS_Store
